@@ -20,6 +20,10 @@ These are my notes for going through the excercises in the neuronal dynamics tex
 ```{python}
 # Import brian
 from brian2 import *
+# data frame support and `tidy` plotting
+import pandas as pd
+import  numpy
+import seaborn
 #activate inline use of matplotlib
 # %matplotlib inline
 ```
@@ -35,6 +39,7 @@ dv/dt = (1-v)/tau : 1
 '''
 ```
 
+<!-- #region -->
 Now we can put the equation into a neuron.
 The equation formally typed out:
 \begin{equation}
@@ -42,8 +47,14 @@ The equation formally typed out:
 \end{equation}
 This equation is a simple exponential decay with $\tau$ time constant.
 
+\begin{equation}
+v(t) = 1-\exp\left(\frac{-t}{\tau}\right)
+\end{equation}
+
+
 Next we assign a Neuron with that voltage equation.
 Neurons are always assigned as a neuron group.
+<!-- #endregion -->
 
 ```{python}
 G = NeuronGroup(1, eqs)
@@ -79,6 +90,7 @@ The neurons have to be specified (here: `record = 0` option) in order to preserv
 
 Now we can introduce spiking behaviour.
 Whenever the threshold is reached, voltage gets set to 0, and decays with the defined equation.
+These can both be specified in the neuron specification.
 
 ```{python}
 start_scope()
@@ -90,11 +102,44 @@ dv/dt = (1-v)/tau : 1
 
 G = NeuronGroup(1, eqs, threshold='v>0.8', reset='v = 0', method='exact')
 
-M = StateMonitor(G, 'v', record=0)
+M = StateMonitor(G, 'v', record=True)
 run(50*ms)
 plot(M.t/ms, M.v[0])
 xlabel('Time (ms)')
 ylabel('v');
+```
+
+`StateMonitor` are 2D arrays with the index of the neuron, and the value of the timecourse.
+This *should* lend itself to create tidy dataframes from this.
+It can be done with the `get.states` syntax (requires pandas).
+
+```{python}
+test = M.get_states(['t','v'[0]], units =False)
+#test
+#len(M.v[0])
+pd.DataFrame({
+    'N': len(M.v),
+    't': M.t,
+    'V': M.v[0]})
+
+```
+
+This produces the output I want from this one, but is not quite what I want yet, we can go back to it.
+Want to have a tidy format dataframe generated from a `StateMonitor` call that can handle multiple variables and neurons.
+Should be doable with for loops.
+
+Pseudocode:
+
+* For each neuron in number_neurons
+    - do a call to get states that produces a tidy output for that neuron
+* then append these tidy frames to each other with a neuron index variable
+* assign that to the main environment
+
+Seaborn is the graphing library that should come close to functionaity to ggplot and has a tidy working paradigm.
+Try to explore the tidy set created.
+
+```{python}
+
 ```
 
 ```{python}
