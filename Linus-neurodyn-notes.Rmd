@@ -22,8 +22,9 @@ These are my notes for going through the excercises in the neuronal dynamics tex
 from brian2 import *
 # data frame support and `tidy` plotting
 import pandas as pd
-import  numpy
-import seaborn
+import numpy as np
+# ggplot port to python
+from plotnine import *
 #activate inline use of matplotlib
 # %matplotlib inline
 ```
@@ -100,9 +101,11 @@ eqs = '''
 dv/dt = (1-v)/tau : 1
 '''
 
-G = NeuronGroup(1, eqs, threshold='v>0.8', reset='v = 0', method='exact')
+G = NeuronGroup(2, eqs, threshold='v>0.8', reset='v = 0', method='exact')
 
 M = StateMonitor(G, 'v', record=True)
+spikemon = SpikeMonitor(G)
+
 run(50*ms)
 plot(M.t/ms, M.v[0])
 xlabel('Time (ms)')
@@ -114,10 +117,7 @@ This *should* lend itself to create tidy dataframes from this.
 It can be done with the `get.states` syntax (requires pandas).
 
 ```{python}
-test = M.get_states(['t','v'[0]], units =False)
-#test
-#len(M.v[0])
-pd.DataFrame({
+simdata = pd.DataFrame({
     'N': len(M.v),
     't': M.t,
     'V': M.v[0]})
@@ -135,13 +135,80 @@ Pseudocode:
 * then append these tidy frames to each other with a neuron index variable
 * assign that to the main environment
 
-Seaborn is the graphing library that should come close to functionaity to ggplot and has a tidy working paradigm.
-Try to explore the tidy set created.
+Plotnine is the graphing library that should come close to functionaity to ggplot and has a tidy working paradigm.
+Try to explore the tidy set created and make a line plot.
+
+
+This should also be possible with np reshape commands.
 
 ```{python}
 
 ```
 
 ```{python}
+(ggplot(simdata, aes(x = 't', y = 'V', colour = 'N'))
++ geom_line())
+```
 
+Brian can register spikes in the simulation.
+This has been done by assigning the spike monitor command.
+
+```{python}
+start_scope()
+
+G = NeuronGroup(1, eqs, threshold='v>0.4', reset='v = 0.2', method='exact')
+
+statemon = StateMonitor(G, 'v', record=0)
+spikemon = SpikeMonitor(G)
+
+run(50*ms)
+
+# update the simdataframe 
+simdata = pd.DataFrame({
+    'N': len(statemon.v),
+    't': statemon.t,
+    'V': statemon.v[0]})
+```
+
+```{python}
+print('Spike times: %s' % spikemon.t[:])
+```
+
+```{python}
+spikesdf = pd.DataFrame({'spikes': spikemon.t/ms /1000})
+```
+
+Now we can plot the extracted spikes, on top of the timecourse.
+
+
+```{python}
+(ggplot(simdata, aes(x = 't', y = 'V'))
++ geom_line(colour = 'blue')
++ geom_vline(aes(xintercept = 'spikes'), data = spikesdf, linetype = 'dotted')
++ theme_bw())
+```
+
+You can introduce refractoryness to the model by adding a refractory dead time.
+
+```{python}
+start_scope()
+
+tau = 10*ms
+eqs = '''
+dv/dt = (1-v)/tau : 1 (unless refractory)
+'''
+
+# The neuron with refractory time
+G = NeuronGroup(1, eqs, threshold='v>0.8', reset='v = 0', refractory=5*ms, method='exact')
+
+statemon = StateMonitor(G, 'v', record=0)
+spikemon = SpikeMonitor(G)
+
+run(50*ms)
+
+# update the simdataframe 
+simdata = pd.DataFrame({
+    'N': len(statemon.v),
+    't': statemon.t,
+    'V': statemon.v[0]})
 ```
