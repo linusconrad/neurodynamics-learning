@@ -211,4 +211,17 @@ simdata = pd.DataFrame({
     'N': len(statemon.v),
     't': statemon.t,
     'V': statemon.v[0]})
+
+# update the spikes
+spikesdf = pd.DataFrame({'spikes': spikemon.t/ms /1000})
+
+# plot it
+(ggplot(simdata, aes(x = 't', y = 'V'))
++ geom_line(colour = 'blue')
++ geom_vline(aes(xintercept = 'spikes'), data = spikesdf, linetype = 'dotted')
++ theme_bw())
+```
+
+```{python}
+
 ```
