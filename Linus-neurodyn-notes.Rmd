@@ -25,7 +25,7 @@ from brian2 import *
 ```
 
 Define a very simple neuron with this syntax.
-The text in the ``` ``` environment are the differential equations that define the behaviour.
+The text in the apostrophe environment are the differential equations that define the behaviour.
 
 
 ```{python}
@@ -40,13 +40,16 @@ The equation formally typed out:
 \begin{equation}
 \frac{\partial v}{\partial t} = \frac{(1-v)}{\tau}
 \end{equation}
+This equation is a simple exponential decay with $\tau$ time constant.
+
+Next we assign a Neuron with that voltage equation.
 Neurons are always assigned as a neuron group.
 
 ```{python}
 G = NeuronGroup(1, eqs)
 ```
 
-Now we can simulate the model with the run command.
+Now we can simulate the timecourse with the run command.
 
 ```{python}
 run(100*ms)
