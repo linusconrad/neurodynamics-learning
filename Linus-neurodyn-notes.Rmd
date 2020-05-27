@@ -55,6 +55,48 @@ Now we can simulate the timecourse with the run command.
 run(100*ms)
 ```
 
+Next, we would like to simulate and look at different aspects of the model as it evolves in time.
+Variables of the model at a given point in time are referred to as *states* by brian.
+The following block simulates and records the time course of voltage based on the model (it should just be an exponential asymptote to 1)
+
+
+
+```{python}
+start_scope()
+
+G = NeuronGroup(1, eqs, method='exact')
+M = StateMonitor(G, 'v', record=0)
+
+run(30*ms)
+
+plot(M.t/ms, M.v[0])
+xlabel('Time (ms)')
+ylabel('v');
+```
+
+State monitor objects are used to store the information of a run.
+The neurons have to be specified (here: `record = 0` option) in order to preserve memory.
+
+Now we can introduce spiking behaviour.
+Whenever the threshold is reached, voltage gets set to 0, and decays with the defined equation.
+
+```{python}
+start_scope()
+
+tau = 10*ms
+eqs = '''
+dv/dt = (1-v)/tau : 1
+'''
+
+G = NeuronGroup(1, eqs, threshold='v>0.8', reset='v = 0', method='exact')
+
+M = StateMonitor(G, 'v', record=0)
+run(50*ms)
+plot(M.t/ms, M.v[0])
+xlabel('Time (ms)')
+ylabel('v');
+```
+
 ```{python}
 
 ```
