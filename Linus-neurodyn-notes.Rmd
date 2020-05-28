@@ -296,13 +296,14 @@ from_dict(spikemon.all_values()['t'],
 # we need to get the information stored in there!
 spikes_wide.index.name = 'neuron'
 spikes_wide.reset_index(inplace=True)
+
 # pivot longer by neuron
 spikes_long = spikes_wide.melt(id_vars = ('neuron'),
                                value_vars = list(range(0,8)),
-                               var_name = 'spiken',
+                               var_name = 'spikeno',
                                value_name = 't')
 # tidy and update the thing
-spikes_long = spikes_long.sort_values(['neuron', 'spiken'])
+spikes_long = spikes_long.sort_values(['neuron', 'spikeno'])
 # drop NA values
 spikes_long = spikes_long.dropna()
 spikes_long
