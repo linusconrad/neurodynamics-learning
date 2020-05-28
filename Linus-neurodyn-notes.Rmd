@@ -255,7 +255,7 @@ Next are going to produce ouput for many neuron.
 ```{python}
 start_scope()
 n_neurons = 100         # Number of neurons
-tau = 10*ms     # time constant
+tau = 10*ms             # time constant
 
 # same equation as before but the asymtone is now 2
 eqs = '''          
@@ -277,6 +277,41 @@ It contains variables `i` (neuron index) and `t` (spiketime).
 They are arrays containing just one vector (dimension `(n_spikes,)`) and have the same length.
 Tidying should therefore be easy.
 
-```{python}
+There is a method implemented for `SpikeMonitor` objects that will return a dictionary object of the values, with the umber of the neuron as index.
+Problem is it produces an array with a unit.
 
+```{python}
+spikemon.all_values()['t'][0]
 ```
+
+Despite this, pandas allows import, however, the data is now in wide format with the neuron as rows.
+So we need to do some wrangling and pivoting.
+
+```{python}
+spikes_wide = pd.DataFrame.\
+from_dict(spikemon.all_values()['t'],
+          orient = 'index')
+
+# pandas for some reason loves rownames, which pisses me off coming from R
+# we need to get the information stored in there!
+spikes_wide.index.name = 'neuron'
+spikes_wide.reset_index(inplace=True)
+# pivot longer by neuron
+spikes_long = spikes_wide.melt(id_vars = ('neuron'),
+                               value_vars = list(range(0,8)),
+                               var_name = 'spiken',
+                               value_name = 't')
+# tidy and update the thing
+spikes_long = spikes_long.sort_values(['neuron', 'spiken'])
+# drop NA values
+spikes_long = spikes_long.dropna()
+spikes_long
+```
+
+This looks fine, but trying to wrangle more I got massive problems because the data types are rubbish.
+
+```{python}
+spikes_long.dtypes
+```
+
+
