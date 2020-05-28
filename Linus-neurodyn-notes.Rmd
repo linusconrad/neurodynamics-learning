@@ -315,4 +315,67 @@ This looks fine, but trying to wrangle more I got massive problems because the d
 spikes_long.dtypes
 ```
 
+```{python}
+spikes_long['t'].str.split(expand = True)
+```
 
+My plan was to treat the compound unt datatype as string and then extract the actual number.
+That does not work and throws an error.
+To get the number I need to apply the `/ms` syntax from the unit data type from brian.
+That works only in a vectorised way if you have a numpy array.
+Now it all lives in pandas.
+We can do it on an individual datum though.
+
+
+```{python}
+spikes_long['t'][1]
+
+```
+
+```{python}
+spikes_long['t'][1]/ms
+
+```
+
+```{python}
+#vectorised is gets rid of something but not quite...
+spikes_long['t']/ms
+```
+
+```{python}
+# try assiging a new column (mutate style in R)
+spikes_long.assign(spiket = spikes_long['t'] /ms)
+```
+
+It does not work, we need to do it row-wise!
+Row-wise operations can be done with apply.
+
+```{python}
+spikes_long['t'].apply(lambda x: x/ms)
+```
+
+```{python}
+# do that in place
+spikes_long['tnum'] = spikes_long['t'].apply(lambda x: x/ms)
+```
+
+Now we should be able to plot the spiketimes from the frame.
+
+
+```{python}
+alt.Chart(spikes_long)\
+.mark_point()\
+.encode(x = 'tnum', y = 'neuron:Q')
+```
+
+Also altair lets us plot the thing even without transforming the type before as long as you specify that its a quantitative variable (`:Q` tag).
+
+```{python}
+alt.Chart(spikes_long)\
+.mark_point()\
+.encode(x = 't:Q', y = 'neuron:Q')
+```
+
+```{python}
+
+```
