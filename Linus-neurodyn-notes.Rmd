@@ -13,6 +13,14 @@ jupyter:
     name: python3
 ---
 
+```{python active="", eval=FALSE}
+
+```
+```{python setup, include=FALSE, cache=FALSE}
+
+```
+
+
 # Learning Simulations
 These are my notes for going through the excercises in the neuronal dynamics textbook.
 
@@ -40,7 +48,6 @@ dv/dt = (1-v)/tau : 1
 '''
 ```
 
-<!-- #region -->
 Now we can put the equation into a neuron.
 The equation formally typed out:
 \begin{equation}
@@ -52,10 +59,9 @@ This equation is a simple exponential decay with $\tau$ time constant.
 v(t) = 1-\exp\left(\frac{-t}{\tau}\right)
 \end{equation}
 
-
+## Simulating and plotting from a single Neuron
 Next we assign a Neuron with that voltage equation.
 Neurons are always assigned as a neuron group.
-<!-- #endregion -->
 
 ```{python}
 G = NeuronGroup(1, eqs)
@@ -142,10 +148,6 @@ Try to explore the tidy set created and make a line plot.
 This should also be possible with np reshape commands.
 
 ```{python}
-
-```
-
-```{python}
 (ggplot(simdata, aes(x = 't', y = 'V', colour = 'N'))
 + geom_line())
 ```
@@ -221,6 +223,59 @@ spikesdf = pd.DataFrame({'spikes': spikemon.t/ms /1000})
 + geom_vline(aes(xintercept = 'spikes'), data = spikesdf, linetype = 'dotted')
 + theme_bw())
 ```
+
+What I did not like about the `plotnine` is that its ggpleot implementation seems to be very sensitive about types and spazzes out immediatly on that, whereas usually R will just throw a warning about continous vs other data.
+
+Altair is another plotting library that looks very clean and is also ignorant about types.
+
+```{python}
+import altair as alt
+
+#tc plot
+tc_chart = alt.Chart(simdata).mark_line().encode(
+    x = 't:Q', 
+    y = 'V:Q'  # Quantitative variable
+)
+
+#plot of the spike value with vertical line
+spike_chart = alt.Chart(spikesdf).mark_rule(strokeDash=[5,5]).encode(
+    x = 'spikes:Q'
+)
+
+# combine and print
+alt.layer(tc_chart,spike_chart)
+```
+
+While not as straightforward as ggplot the syntax and output is simple and prety enough.
+
+## Simulating multiple Neurons
+
+Next are going to produce ouput for many neuron.
+
+```{python}
+start_scope()
+n_neurons = 100         # Number of neurons
+tau = 10*ms     # time constant
+
+# same equation as before but the asymtone is now 2
+eqs = '''          
+dv/dt = (2-v)/tau : 1 
+''' 
+# A network of 100 neurons
+net_100 = NeuronGroup(n_neurons, eqs, threshold='v>1', reset='v=0', method='exact')
+# this gives every neuron a different starting value for the voltage at t0
+net_100.v = 'rand()' 
+
+spikemon = SpikeMonitor(net_100) # this records the spiketimes
+
+run(50*ms)
+
+```
+
+Now we need to clean the spikemonitor variable.
+It contains variables `i` (neuron index) and `t` (spiketime).
+They are arrays containing just one vector (dimension `(n_spikes,)`) and have the same length.
+Tidying should therefore be easy.
 
 ```{python}
 

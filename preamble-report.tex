@@ -1,0 +1,228 @@
+% Option for LaTex documents
+% Linus Conrad
+%-------------------------
+
+% BASIC SETUP
+% these packages need to be loaded before others
+%-------------------------
+
+% language selection for hyphenation etc, use \selectlanguage{x} in a document to change
+% ngerman is German with the reformed orthographic rules
+\usepackage[UKenglish]{babel}
+
+% KP font family, full family with math support with old fashioned feel
+% requires no further setup
+% may need to be loaded with option 'notextcomp' if combined with other fonts
+%\usepackage[lighttext]{kpfonts}
+
+% The font, chosen because it is easy to match in ggplot and has full math support
+\usepackage{tgpagella}% Palladio needs more leading (space between lines)
+
+
+% Typewriter font for listings and Sequences
+%\usepackage[varqu,varl]{inconsolata} % sans serif style fixed width font
+\usepackage[zerostyle=d]{newtxtt} % serif style style fixed width font
+
+% required for full glyph support
+\usepackage[LGR,T1]{fontenc}
+
+% utf-8 encoding for support of umlaut etc without escape characters in .tex files
+\usepackage[utf8]{inputenc}
+% required package to set typographically correct quotation marks, needed by babel and biber
+\usepackage{csquotes}
+% needed not to mess up greek letters in titles etc
+\usepackage{textalpha}
+
+% this gets rid of annoying "substituted fontsize" errors and enables seamless scaling
+\usepackage{anyfontsize}
+
+% TYPESETTING & STYLE
+%-------------------------
+% sets the space between lines
+\usepackage{setspace}
+    \setstretch{1.3}	
+% necessary to specify coloured text
+\usepackage{xcolor}
+% Inkscape may throw error for not having this 
+\usepackage{transparent}
+%prevents widows and orphans
+\usepackage[all]{nowidow}
+
+% further options to the KOMA class
+% These determine the page layout and define font styles
+% for defined parts of the doc structure (header, maint ext etc)
+% ------------------------
+\KOMAoptions{DIV = 10,
+   headings = standardclasses, %sets disposition to roman (see below) and adjusts sizes of  disposition objects like in the standard class
+   % chapterprefix = true, % only for books
+   headsepline = true,  % sets a line in the header
+   %footsepline = true,
+   abstract = true, % adds a header to the abstract
+   %BCOR = 2cm  % binding correction
+   draft = true  % draft mode
+}
+	
+% Koma options for typesetting the ToC
+%\KOMAoptions{listof = totoc}
+
+% Komaoption of the ToC
+\KOMAoption{toc}{
+  bib%, %  the bibliography has an unnumbered entry in the table of contents
+  %listof, %  makes a list of figures into toc
+}
+
+% Komaoptions for sectioning headlines
+%\KOMAoption{headings}{
+%    big,        % headlines are less mighty (chapter headlines are enlarged below below)
+%    optiontohead  % optional short title gets written into header, full title goes to ToC
+%    }
+
+% Give instructions how to set the font particular elements (captions and more)
+%\setkomafont{sectioning}{\rmfamily\bfseries\boldmath} % example
+
+
+% Koma options for typesetting captions
+\KOMAoption{captions}{
+  centeredbeside,  % captions set to the side of a float appear vertically centered
+  outerbeside,     % captions appear on the inner side in a double sided document
+	}
+
+%\renewcommand*{\captionformat}{ }  % this determines the figure label separator
+\setkomafont{captionlabel}{\normalsize\bfseries}
+\addtokomafont{caption}{\footnotesize\rmfamily}
+\setcapindent{0em} % sets and indent on captions (removes "hanging" caption) 
+
+\setkomafont{descriptionlabel}{\rmfamily\bfseries}
+
+\setkomafont{subsubsection}{\centering\itshape\mdseries\large}
+
+%KOMA dictum environment
+\renewcommand{\dictumwidth}{0.5\textwidth}
+\setkomafont{dictum}{\normalfont\normalcolor\rmfamily\small}
+
+%\setkomafont{pageheadfoot}{\scfamily} % footer
+%\setkomafont{pageheadfoot}{\rmfamily\scshape}  
+
+%\setkomafont{pagenumber}{\sffamily} % pagenumber
+%\setkomafont{pagenumber}{\rmfamily} 
+                    
+% see documentation, this removes justified headings as defined by KOMA                            
+\let\raggedsection\relax
+
+% Packages adding functionality
+% -----------------------------
+% comprehensive support for mathematical glyphs
+\usepackage{amsmath}
+
+% automatical typesetting of units
+\usepackage[separate-uncertainty=true,
+    multi-part-units=single]{siunitx}
+	\sisetup{detect-all}
+	\DeclareSIUnit\molar{M}
+	\DeclareSIUnit{\calorie}{cal}
+
+% typographical tables without vertical lines
+\usepackage{booktabs}
+
+% provides table environment adjusted to the width of the text, supports linebreaks in cells
+\usepackage{tabularx}
+
+% improoves typessing, hanging punctuation and adjustment of glyph width etc
+\usepackage{microtype}
+
+% provides compact list environments that waste less space
+\usepackage{paralist}
+
+% Required for inserting any graphics
+\usepackage{graphicx}
+	\DeclareGraphicsExtensions{.pdf_tex,.pdf,.png,.jpg}
+	%declare additional paths for all chapters
+	\graphicspath{	
+	{./figure/},
+	{./figure/export/}}
+
+% set how much text to fig ratio is accepted befre creating a figure only page
+\renewcommand{\floatpagefraction}{.85}
+\renewcommand{\topfraction}{.8}
+\renewcommand{\bottomfraction}{.8}
+
+% allow latex to make shorter pages if necesary to prevent awkward sections
+% starting at the very bottom of a page
+% disable this in double sided docs
+\raggedbottom
+
+% support for non unix-style path to graphics
+%\usepackage{grffile}
+
+% allows an alternative \clearpage command that does not cause a pagebreak but forces to place all floats
+\usepackage{afterpage}
+
+% reference sections or figures automatically with \cref{#label}
+\usepackage[english]{cleveref}
+% this gets rid of the braket around the number
+\creflabelformat{equation}{#2#1#3}
+
+% making glossaries, has to be set after hyperref!
+\usepackage[nonumberlist]{glossaries}
+ 
+% REFERENCING
+%-------------------------
+\usepackage[backend=biber,
+  style = authoryear, %numeric or authoryear
+  backref = false,
+%  refsegment = chapter,
+  sorting = nyt,
+  %natbib=true,
+  date = year,  % drops any other info on date of publication from references
+  maxcitenames = 2,
+  %ibidtracker = true,
+  maxbibnames = 4,  
+  giveninits = true,
+  %terseinits = true,
+  uniquelist = false,
+  uniquename = false 
+  ]{biblatex}
+
+
+% remove unwanted entries
+\DeclareSourcemap{
+\maps[datatype=bibtex, overwrite]{
+	\map{\step[fieldset=language, null]
+		\step[fieldset=notes, null]
+		\step[fieldset=urldate, null]
+		\step[fieldset=url, null]
+		\step[fieldset=doi, null]
+		\step[fieldset=issn, null]
+		\step[fieldset=month, null]
+		\step[fieldset=editor, null]
+	}
+}
+}
+
+% This line is important!
+%\addbibresource{samplebibliography.bib}
+
+% set the font for the bibliography to SF
+\renewcommand*{\bibfont}{\footnotesize}
+	      
+% removes a superflous comma after first author in bibliography      	 
+%\renewcommand*{\revsdnamepunct}{} 
+%\newcommand{\tempmaxup}[1]{\def\blx@maxcitenames{\blx@maxbibnames}#1} 
+
+% Change the spacing in knitR listings to single
+\renewenvironment{Shaded}{\singlespacing\begin{snugshade}}{\end{snugshade}}
+
+
+% layout package to print the size of some values
+% I need to know this to export the figures at appropiate size to scale the fonts correctly
+%\usepackage{layouts}
+
+%this command suppresses hbox warnings for small violations
+\hfuzz=4pt 
+
+% this determines how numbered sections appear
+\setcounter{secnumdepth}{2}
+\setcounter{tocdepth}{1}
+\setcounter{section}{0}
+
+
