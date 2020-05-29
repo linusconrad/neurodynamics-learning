@@ -453,10 +453,10 @@ def tidy_spike(s_mon_object) :
     # and a column for each spike (as many columns as the maximum number of spikes for a neuron)
     # there is an index column and a neuron column, so the max number of spikes
     # and the number of data colums is the number of columns -2
-    spike_max = spikes_wide.shape[1]
+    spike_max = sdata_wide.shape[1]
     
     # pivot longer by neuron
-    sdata_long = spikes_wide.melt(id_vars = ('neuron'),
+    sdata_long = sdata_wide.melt(id_vars = ('neuron'),
                                value_vars = list(range(0,spike_max-1)),
                                var_name = 'spikeno',
                                value_name = 't')
@@ -518,7 +518,7 @@ tidy_spike(M).groupby('neuron').agg({'spikeno': [max]})
 
 This will give rubbish again because python indexes with 0.
 In a world of meaningful numbers we need to add 1 to it to make it right.
-After the summary we need to run some in place mutation to add 1 to the the max spike.
+After the summary we need to run some in-place mutation to add 1 to the the max spike.
 
 ```{python}
 summary_byN = tidy_spike(M).groupby('neuron').agg({'spikeno': [max]})
@@ -530,7 +530,199 @@ summary_byN = summary_byN.assign(FRate_hz = summary_byN['spikeno']/1)
 ```
 
 Inspecting the code of the matplotlib stuff, there is actually by neuron summaries stored in the G and M objects.
-Better try to write a tidier for those!
+Better try to write a tidier for those instead of re-inventing.
+
+```{python}
+# firing counts
+pd.Series({'A': np.array(M.count)})
+```
+
+Also `brian` has a method to extract the neuron parameters in pandas format to start.
+
+```{python}
+# extracts all the model starting parameters and the last timepoint
+summary_byN = G.get_states(units=False, format='pandas') 
+# now we can assign the firing rate data as new columns
+summary_byN['nAP'] = pd.Series(np.array(M.count))
+# calculate firing rate
+summary_byN = summary_byN.assign(FRate_hz = summary_byN['nAP']/1)
+summary_byN
+```
+
+Now we can plot the systematically varied parameter and the firing rate.
+
+```{python}
+sns.relplot(x="v0", y="FRate_hz", data=summary_byN, kind = 'line');
+```
+
+To replicate what has been done in the example we need to set the plots side by side.
+With seaborn that is done with matplotlib.
+Seaborn is  a wrapper to matplotlib and creates plot objects compatible with it.
+
+I had to change the options for plotting.
+The previously used `relplot` is meant to produce larger facetted plots that you cant pass to make subplots apparently.
+
+```{python}
+import matplotlib.pyplot as plt
+
+f, axes = plt.subplots(1, 2, figsize=(12, 8))
+sns.scatterplot(x="t_ms", y="neuron", data=tidy_spike(M), alpha = 0.2, ax=axes[0])
+sns.lineplot(x="v0", y="FRate_hz", data=summary_byN, ax=axes[1]);
+```
+
+### Introducing a stochastic variable
+
+```{python}
+start_scope()
+
+N = 100
+tau = 10*ms
+v0_max = 1.
+duration = 2000*ms
+sigma = 0.4
+
+eqs = '''
+dv/dt = (v0-v)/tau+sigma*xi*tau**-0.5 : 1 (unless refractory)
+v0 : 1
+'''
+
+Gnew = NeuronGroup(N, eqs, threshold='v>1', reset='v=0', refractory=5*ms, method='euler')
+Mnew = SpikeMonitor(Gnew)
+
+Gnew.v0 = 'i*v0_max/(N-1)'
+
+run(duration)
+
+```
+
+This introduces a gaussian jitter on tau `sigma*xi*tau**-0.5`, why it takes this form exactly I dont know and is beyond me.
+
+```{python}
+# Make a tidier for by neuron summaries
+def tidy_byN(aneuron, monitorobj):
+    """
+    This function takes a brian neuron group
+    and a spike monitor object of it
+    then returns a tidy pandas frame of the start and and values and the firing rates
+    """
+    # extracts all the model starting parameters and the last timepoint
+    byN = aneuron.get_states(units=False, format='pandas')
+    
+    # duration of the run
+    run_dur = byN['t_in_timesteps'][0]*byN['dt'][0]
+    # now we can assign the firing rate data as new columns
+    byN['nAP'] = pd.Series(np.array(monitorobj.count))
+    # calculate firing rate
+    byN = byN.assign(FRate_hz = byN['nAP']/run_dur)
+    return(byN)
+```
+
+```{python}
+# now we can use both tidiers to quickly plot everything
+f, axes = plt.subplots(1, 2, figsize=(12, 6))
+sns.lineplot(x="v0", y="FRate_hz", data= tidy_byN(Gnew, Mnew), ax=axes[1])
+sns.scatterplot(x = 't_ms', y = 'neuron', data = tidy_spike(Mnew), alpha = 0.5, ax=axes[0]);
+```
+
+# Synapses
+
+```{python}
+start_scope()
+
+eqs = '''
+dv/dt = (asym-v)/tau : 1
+asym : 1
+taun : second
+'''
+G = NeuronGroup(2, eqs, threshold='v>1', reset='v = 0', method='exact')
+G.asym = [2, 0]
+G.taun = [10, 100]*ms
+
+# Comment these two lines out to see what happens without Synapses
+S = Synapses(G, G, on_pre='v_post += 0.2')
+S.connect(i=0, j=1)
+
+Mstate = StateMonitor(G, 'v', record=True)
+
+run(100*ms)
+```
+
+Next section in the Manual:
+We create 2 neurons.
+For the parameters we can assign a vector of the length of the number of neurons.
+We have different values for the asymtote as well as the time constant.
+The First neuron should be exiteable spontaneously, the second not at all.
+
+However, there is a synapse on the second on which will increase `v` on every spike of the first.
+It should therefore fire after integrating a couple of spikes.
+
+Now we will need a tidier for the V monitor object.
+This may be a bit more complicated.
+`monitor.v` is a 2 dimensional array.
+There is a row for every Neuron.
+
+```{python}
+np.array(Mstate.v).shape
+```
+
+I dont know wnough about the arrays to see whether the following will fill the rows in the right way.
+Got to try.
+
+```{python}
+np.array(Mstate.v).reshape(1000,2)
+```
+
+This should be a rectangular table that pandas could handle.
+
+```{python}
+# If the following returns the time-series alright we are golden.
+# reshape and make a frame
+test = pd.DataFrame(np.array(Mstate.v).reshape(1000,2))
+test.index.name = 't_dummy'
+test.reset_index(inplace=True)
+
+# make long
+test = test.melt(id_vars = 't_dummy', value_vars = [0, 1], var_name = "neuron")
+
+sns.relplot(x = 't_dummy',
+            y = 'value',
+            hue = "neuron",
+            col = "neuron",
+            kind = "line",
+            data = test);
+```
+
+It does not and the data from the `np.reshape` was just spread between the two columns.
+
+```{python}
+# Its stored per row so we should be able to make a frame without reshaping
+# reshape and make a frame
+test = pd.DataFrame(np.array(Mstate.v))
+test.index.name = 'neuron'
+test.reset_index(inplace=True)
+test
+```
+
+```{python}
+# make long
+test = test.melt(id_vars = 'neuron')
+```
+
+```{python}
+sns.relplot(x = 'variable',
+            y = 'value',
+            hue = "neuron",
+            col = "neuron",
+            kind = "line",
+            data = test);
+```
+
+```{python}
+#  Try to include the time in this
+# the time actually is in column format
+testt = pd.DataFrame(np.array(Mstate.t)())
+testt
+```
 
 ```{python}
 
