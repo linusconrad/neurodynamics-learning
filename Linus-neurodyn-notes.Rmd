@@ -11,13 +11,15 @@ jupyter:
     display_name: Python 3
     language: python
     name: python3
+output:
+  html_document:
+    df_print: paged
 ---
 
-```{python active="", eval=FALSE}
-
-```
-```{python setup, include=FALSE, cache=FALSE}
-
+```{r}
+library(tidyverse)
+library(reticulate)
+use_condaenv(condaenv = "brian", conda = "auto", required = FALSE)
 ```
 
 
@@ -70,6 +72,8 @@ G = NeuronGroup(1, eqs)
 Now we can simulate the timecourse with the run command.
 
 ```{python}
+start_scope()
+
 run(100*ms)
 ```
 
@@ -87,9 +91,9 @@ M = StateMonitor(G, 'v', record=0)
 
 run(30*ms)
 
-plot(M.t/ms, M.v[0])
-xlabel('Time (ms)')
-ylabel('v');
+# plot(M.t/ms, M.v[0])
+# xlabel('Time (ms)')
+# ylabel('v');
 ```
 
 State monitor objects are used to store the information of a run.
