@@ -1,4 +1,7 @@
 ---
+output:
+  html_document:
+    df_print: paged
 jupyter:
   jupytext:
     formats: ipynb,Rmd
@@ -11,15 +14,13 @@ jupyter:
     display_name: Python 3
     language: python
     name: python3
-output:
-  html_document:
-    df_print: paged
 ---
+```{python}
+# %load_ext rpy2.ipython
+```
 
 ```{r}
 library(tidyverse)
-library(reticulate)
-use_condaenv(condaenv = "brian", conda = "auto", required = FALSE)
 ```
 
 
@@ -379,6 +380,157 @@ alt.Chart(spikes_long)\
 .mark_point()\
 .encode(x = 't:Q', y = 'neuron:Q')
 ```
+
+## Parameters
+We can systematically vary input parameter along neurons.
+
+```{python}
+start_scope()
+
+N = 100
+tau = 10*ms
+v0_max = 3.
+duration = 1000*ms
+
+eqs = '''
+dv/dt = (v0-v)/tau : 1 (unless refractory)
+v0 : 1
+'''
+
+G = NeuronGroup(N, eqs, threshold='v>1', reset='v=0', refractory=5*ms, method='exact')
+M = SpikeMonitor(G)
+
+G.v0 = 'i*v0_max/(N-1)'
+```
+
+The line `v0 : 1` declares a new per-neuron parameter `v0` with units 1 (i.e. dimensionless) for the asymptote of the exponential.
+The line `G.v0 = 'i*v0_max/(N-1)'` initialises the value of v0 for each neuron varying from 0 up to `v0_max`. The symbol `i` when it appears in strings like this refers to the neuron index.
+
+```{python}
+# now we can run this and extract the spikes
+run(duration)
+```
+
+```{python}
+spikes_wide = pd.DataFrame.\
+from_dict(M.all_values()['t'],
+          orient = 'index')
+
+# pandas for some reason loves rownames, which pisses me off coming from R
+# we need to get the information stored in there!
+spikes_wide.index.name = 'neuron'
+spikes_wide.reset_index(inplace=True)
+# there will be now 1 neuron column with number of neuron rows
+# and a column for each spike (as many columns as the maximum number of spikes for a neuron)
+# there is an index column and a neuron column, so the max number of spikes
+# and the number of data colums is the number of columns -2
+spike_max = spikes_wide.shape[1]
+
+# pivot longer by neuron
+spikes_long = spikes_wide.melt(id_vars = ('neuron'),
+                               value_vars = list(range(0,spike_max-1)),
+                               var_name = 'spikeno',
+                               value_name = 't')
+# tidy and update the thing
+spikes_long = spikes_long.sort_values(['neuron', 'spikeno'])
+# drop NA values
+spikes_long = spikes_long.dropna()
+spikes_long['t'] = spikes_long['t'].apply(lambda x: x/ms)
+```
+
+```{python}
+# make this procedure into a function
+def tidy_spike(s_mon_object) :
+    """
+    This function takes all the data from within a spikemonitor brian object
+    and makes it into a tidy pandas frame
+    """
+    # extract the data to a wide frame
+    sdata_wide =  pd.DataFrame.from_dict(s_mon_object.all_values()['t'],orient = 'index')
+    sdata_wide.index.name = 'neuron'
+    sdata_wide.reset_index(inplace=True)
+    # there will be now 1 neuron column with number of neuron rows
+    # and a column for each spike (as many columns as the maximum number of spikes for a neuron)
+    # there is an index column and a neuron column, so the max number of spikes
+    # and the number of data colums is the number of columns -2
+    spike_max = spikes_wide.shape[1]
+    
+    # pivot longer by neuron
+    sdata_long = spikes_wide.melt(id_vars = ('neuron'),
+                               value_vars = list(range(0,spike_max-1)),
+                               var_name = 'spikeno',
+                               value_name = 't')
+    
+    # tidy and update the thing
+    sdata_long = sdata_long.sort_values(['neuron', 'spikeno'])
+    # drop NA values
+    sdata_long = sdata_long.dropna()
+    # add a proper numeric time variable
+    sdata_long['t_ms'] = sdata_long['t'].apply(lambda x: x/ms)
+    
+    #return the thing
+    return(sdata_long)  
+```
+
+```{python}
+# test the function
+tidy_spike(M)
+```
+
+```{python jupyter={'outputs_hidden': True}}
+# now plot the thing
+alt.Chart(spikes_long)\
+.mark_point()\
+.encode(x = 't:Q',
+       y = 'neuron')
+
+```
+
+So apparently altair refuses to make plots with "large" datasets, which actually makes it utterly useless.
+
+```{python}
+figure(figsize=(12,4))
+subplot(121)
+plot(M.t/ms, M.i, '.k')
+xlabel('Time (ms)')
+ylabel('Neuron index')
+subplot(122)
+plot(G.v0, M.count/duration)
+xlabel('v0')
+ylabel('Firing rate (sp/s)');
+```
+
+```{python}
+# try seaborn instead
+import seaborn as sns
+
+sns.relplot(x="t_ms", y="neuron", data=tidy_spike(M), alpha = 0.2);
+```
+
+Next, try to reproduce the plot from the example.
+We will need to summarise by neuron to get the firing rate.
+This should be possible with some group wise-pandas operation.
+The syntax for this is `groupby` and `agg`. 
+
+```{python}
+tidy_spike(M).groupby('neuron').agg({'spikeno': [max]})
+```
+
+This will give rubbish again because python indexes with 0.
+In a world of meaningful numbers we need to add 1 to it to make it right.
+After the summary we need to run some in place mutation to add 1 to the the max spike.
+
+```{python}
+summary_byN = tidy_spike(M).groupby('neuron').agg({'spikeno': [max]})
+# add 1
+summary_byN = summary_byN.assign(APMAX = summary_byN['spikeno']+1)
+# calculate the firing rate (we simulated 1 second)
+summary_byN = summary_byN.assign(FRate_hz = summary_byN['spikeno']/1)
+
+```
+
+Inspecting the code of the matplotlib stuff, there is actually by neuron summaries stored in the G and M objects.
+Better try to write a tidier for those!
 
 ```{python}
 
