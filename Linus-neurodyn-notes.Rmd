@@ -890,6 +890,478 @@ Skip the more complicated connectivity tutorials
 
 # Simulations
 
+
+We now go for the standard task of running multiple simulations with a network that is systematically varied.
+(this might not be needed for varying neurons, as you can use the parameter options...)
+
+Here we have a network that is driven by a random process.
+The neurons have an asymptote of 0 here and can only fire from the input.
+There is only one neuron with 100 inputs.
+
+Now we have the question how that neurons oupput (in terms of firing rate) changes depending on different values for $\tau$.
+
+```{python}
+# remember, this is here for running separate simulations in the same notebook
+start_scope()
+# Parameters
+num_inputs = 100
+input_rate = 10*Hz
+weight = 0.1
+# Range of time constants
+tau_range = linspace(1, 10, 30)*ms
+# Use this list to store output rates
+output_rates = []
+# Iterate over range of time constants
+for tau in tau_range:
+    # Construct the network each time
+    P = PoissonGroup(num_inputs, rates=input_rate)
+    eqs = '''
+    dv/dt = -v/tau : 1
+    '''
+    G = NeuronGroup(1, eqs, threshold='v>1', reset='v=0', method='exact')
+    S = Synapses(P, G, on_pre='v += weight')
+    S.connect()
+    M = SpikeMonitor(G)
+    # Run it and store the output firing rate in the list
+    run(1*second)
+    output_rates.append(tidy_byN(G, M))
+    
+```
+
+Now we need to concatenate the list of dataframes to one and plot the thing.
+We can concatenate lists of tidy pandas frame with the `pd.concat` method as long as they share their format.
+
+
+```{python}
+# this concatenates it
+pd.concat(output_rates)
+# also need to add a column for the tau values, probably best to find a way to add it during the loop...
+output_rates = pd.concat(output_rates)
+output_rates['tau'] = linspace(1, 10, 30)
+```
+
+```{python}
+# Plot it
+sns.lineplot(x = 'tau', y = 'FRate_hz', data = output_rates);
+```
+
+The performance (ie speed) can be much improoved by using the `store` states commands.
+Instead of re creating the neurons every loop, we set the nurons up once and then run the simulations from this basis.
+
+```{python}
+start_scope()
+num_inputs = 100
+input_rate = 10*Hz
+weight = 0.1
+tau_range = linspace(1, 10, 30)*ms
+output_rates = []
+# Construct the network just once
+P = PoissonGroup(num_inputs, rates=input_rate)
+eqs = '''
+dv/dt = -v/tau : 1
+'''
+
+G = NeuronGroup(1, eqs, threshold='v>1', reset='v=0', method='exact')
+S = Synapses(P, G, on_pre='v += weight')
+S.connect()
+M = SpikeMonitor(G)
+
+# Store the current state of the network
+store()
+for tau in tau_range:
+    # Restore the original state of the network
+    restore()
+    # Run it with the new value of tau
+    run(1*second)
+    output_rates.append(tidy_byN(G,M))
+# concatenate and plot it
+output_rates = pd.concat(output_rates)
+output_rates['tau'] = linspace(1, 10, 30)
+# Plot it
+sns.lineplot(x = 'tau', y = 'FRate_hz', data = output_rates);
+```
+
+The store and restore commands can be used in more complicated situations.
+For example you can "fork" a simulation to different conditions after running and stroting it.
+
+Int he following a spike pattern is generated, stored and played to a number of different neurons.
+
+In order not to re-run all the objects created (spike generator and neurons), special syntax assigning network groups are used.
+Then, only one network can be run.
+
+```{python}
+start_scope()
+num_inputs = 100
+input_rate = 10*Hz
+weight = 0.1
+tau_range = linspace(1, 10, 30)*ms
+output_rates = []
+# Construct the Poisson spikes just once
+P = PoissonGroup(num_inputs, rates=input_rate)
+MP = SpikeMonitor(P)
+# We use a Network object because later on we don't
+# want to include these objects
+net = Network(P, MP)
+net.run(1*second)
+# And keep a copy of those spikes
+spikes_i = MP.i
+spikes_t = MP.t
+```
+
+```{python}
+# Now construct the network that we run each time
+# SpikeGeneratorGroup gets the spikes that we created before
+SGG = SpikeGeneratorGroup(num_inputs, spikes_i, spikes_t)
+eqs = '''
+dv/dt = -v/tau : 1
+'''
+G = NeuronGroup(1, eqs, threshold='v>1', reset='v=0', method='exact')
+S = Synapses(SGG, G, on_pre='v += weight')
+S.connect()
+M = SpikeMonitor(G)
+# Store the current state of the network
+net = Network(SGG, G, S, M)
+net.store()
+for tau in tau_range:
+    # Restore the original state of the network
+    net.restore()
+    # Run it with the new value of tau
+    net.run(1*second)
+    output_rates.append(tidy_byN(G,M))
+# concatenate and plot it
+output_rates = pd.concat(output_rates)
+output_rates['tau'] = linspace(1, 10, 30)
+# Plot it
+sns.lineplot(x = 'tau', y = 'FRate_hz', data = output_rates);
+```
+
+Also, (and I find this more intuitive) we only have on neuron in the network.
+Instead of looping we can just assign tau as a parameter and play the recorded spikes.
+Pay attention to how this is done, as likely I would construct such models with only one neuron but parameters! 
+
+```{python}
+start_scope()
+num_inputs = 100
+input_rate = 10*Hz
+weight = 0.1
+# specify tau, do note that this also assigns the number of neurons!
+tau_range = linspace(1, 20, 50)*ms
+num_tau = len(tau_range)
+P = PoissonGroup(num_inputs, rates=input_rate)
+# We make tau a parameter of the group
+eqs = '''
+dv/dt = -v/tau : 1
+tau : second
+'''
+# And we have num_tau output neurons, each with a different tau
+G = NeuronGroup(num_tau, eqs, threshold='v>1', reset='v=0', method='exact')
+G.tau = tau_range
+S = Synapses(P, G, on_pre='v += weight')
+S.connect()
+M = SpikeMonitor(G)
+# Now we can just run once with no loop
+run(1*second)
+output_rates = tidy_byN(G,M) # firing rate is count/duration
+
+# no need to concatenate anything as tau should be written in the starting condition per neuron.
+sns.lineplot(x = 'tau', y = 'FRate_hz', data = output_rates);
+```
+
+## getting to HH...
+The following code now uses a simple HH model.
+It shows how to manipulate input voltages and the like.
+The task at hand is to stimulate regularly but change the amplitude of the injected current every 10ms.
+Such operations can be done with the `run_regularly` method of the neuron group.
+Here, regularly, every 10 ms the injecting current is changed randomly.
+
+```{python}
+start_scope()
+# Parameters
+area = 20000*umetre**2              # Membrane area
+Cm = 1*ufarad*cm**-2 * area         # capacitance per area
+gl = 5e-5*siemens*cm**-2 * area     # leak conductance per area
+El = -65*mV                         # leak reversal (RMP)
+EK = -90*mV                         # potassium reversal
+ENa = 50*mV                         # sodium reversal
+g_na = 100*msiemens*cm**-2 * area   # Na conductance per area
+g_kd = 30*msiemens*cm**-2 * area    # K conductance per area 
+VT = -63*mV                         # nernst slope
+# The model
+eqs_HH = '''
+# voltage equation
+dv/dt = (gl*(El-v) - g_na*(m*m*m)*h*(v-ENa) - g_kd*(n*n*n*n)*(v-EK) + I)/Cm : volt
+
+# Sodium activation particle (Po)
+dm/dt = 0.32*(mV**-1)*(13.*mV-v+VT)/
+    (exp((13.*mV-v+VT)/(4.*mV))-1.)/ms*(1-m)-0.28*(mV**-1)*(v-VT-40.*mV)/
+    (exp((v-VT-40.*mV)/(5.*mV))-1.)/ms*m : 1
+    
+# Potassium activation particle
+dn/dt = 0.032*(mV**-1)*(15.*mV-v+VT)/
+    (exp((15.*mV-v+VT)/(5.*mV))-1.)/ms*(1.-n)-.5*exp((10.*mV-v+VT)/(40.*mV))/ms*n : 1
+    
+# Sodium inactivation particle
+dh/dt = 0.128*exp((17.*mV-v+VT)/(18.*mV))/ms*(1.-h)-4./(1+exp((40.*mV-v+VT)/(5.*mV)))/ms*h : 1
+I : amp
+'''
+
+group = NeuronGroup(1, eqs_HH,
+                    threshold='v > -40*mV',
+                    refractory='v > -40*mV',
+                    method='exponential_euler')
+group.v = El
+statemon = StateMonitor(group, 'v', record=True)
+spikemon = SpikeMonitor(group, variables='v')
+
+group.run_regularly('I = rand()*50*nA', dt=10*ms)
+run(50*ms)
+```
+
+```{python}
+# specify wide figure aspect ratio for time series plot
+figure(figsize=(12, 4))
+sns.lineplot(x = 't', y = 'v', data = tidy_v(statemon))
+# vlines adds multiple vertical lines in a vectorised way
+plt.vlines(array([0.01, 0.02, 0.03, 0.04]),
+           ymin = -0.065,
+           ymax = 0.04,
+           linestyles = 'dashed')
+plt.hlines(-0.065,
+           xmin = 0,
+           xmax = 0.05,
+           linestyles = 'dashed')
+;
+```
+
+Alternatively, and allowing more complexity `network operations` can be specified.
+Here any code can be run, here we use the `I` attribute of the neuron to set the stimulation again.
+
+```{python}
+start_scope()
+group = NeuronGroup(1, eqs_HH,
+                    threshold='v > -40*mV',
+                    refractory='v > -40*mV',
+                    method='exponential_euler')
+group.v = El
+statemon = StateMonitor(group, 'v', record=True)
+spikemon = SpikeMonitor(group, variables='v')
+
+# we replace the loop with a network_operation
+@network_operation(dt=10*ms)
+def change_I():
+    group.I = rand()*50*nA
+    
+run(50*ms)
+
+# specify wide figure aspect ratio for time series plot
+figure(figsize=(12, 4))
+sns.lineplot(x = 't', y = 'v', data = tidy_v(statemon))
+# vlines adds multiple vertical lines in a vectorised way
+plt.vlines(array([0.01, 0.02, 0.03, 0.04]),
+           ymin = -0.065,
+           ymax = 0.04,
+           linestyles = 'dashed')
+plt.hlines(-0.065,
+           xmin = 0,
+           xmax = 0.05,
+           linestyles = 'dashed')
+;
+```
+
+Next, we use multiple neurons to simulate the same inputs.
+We use a neuron group with the capacitance as parameter (ie the neurons will have different sizes).
+
+```{python}
+start_scope()
+N = 3
+eqs_HH_2 = '''
+dv/dt = (gl*(El-v) - g_na*(m*m*m)*h*(v-ENa) - g_kd*(n*n*n*n)*(v-EK) + I)/C : volt
+dm/dt = 0.32*(mV**-1)*(13.*mV-v+VT)/
+    (exp((13.*mV-v+VT)/(4.*mV))-1.)/ms*(1-m)-0.28*(mV**-1)*(v-VT-40.*mV)/
+    (exp((v-VT-40.*mV)/(5.*mV))-1.)/ms*m : 1
+dn/dt = 0.032*(mV**-1)*(15.*mV-v+VT)/
+    (exp((15.*mV-v+VT)/(5.*mV))-1.)/ms*(1.-n)-.5*exp((10.*mV-v+VT)/(40.*mV))/ms*n : 1
+dh/dt = 0.128*exp((17.*mV-v+VT)/(18.*mV))/ms*(1.-h)-4./(1+exp((40.*mV-v+VT)/(5.*mV)))/ms*h : 1
+I : amp
+C : farad
+'''
+group = NeuronGroup(N, eqs_HH_2,
+                    threshold='v > -40*mV',
+                    refractory='v > -40*mV',
+                    method='exponential_euler')
+group.v = El
+# initialise with some different capacitances
+group.C = array([0.8, 1, 1.2])*ufarad*cm**-2*area
+statemon = StateMonitor(group, variables=True, record=True)
+# we go back to run_regularly
+group.run_regularly('I = rand()*50*nA', dt=10*ms)
+run(50*ms)
+
+# Plot
+figure(figsize=(12, 4))
+sns.lineplot(x = 't',
+             y = 'v',
+             hue = 'neuron',
+             data = tidy_v(statemon))
+# vlines adds multiple vertical lines in a vectorised way
+plt.vlines(array([0.01, 0.02, 0.03, 0.04]),
+           ymin = -0.065,
+           ymax = 0.04,
+           linestyles = 'dashed')
+plt.hlines(-0.065,
+           xmin = 0,
+           xmax = 0.05,
+           linestyles = 'dashed')
+;
+```
+
+Here, all neuons received a different random input.
+In order to compare the effect of the capacitance we need to do something else!
+In order for each neuron to receive the same input on the `rand` current command, we need to set `I` as shared in the equation setup.
+
+```{python}
+start_scope()
+N = 3
+eqs_HH_3 = '''
+dv/dt = (gl*(El-v) - g_na*(m*m*m)*h*(v-ENa) - g_kd*(n*n*n*n)*(v-EK) + I)/C : volt
+dm/dt = 0.32*(mV**-1)*(13.*mV-v+VT)/
+    (exp((13.*mV-v+VT)/(4.*mV))-1.)/ms*(1-m)-0.28*(mV**-1)*(v-VT-40.*mV)/
+    (exp((v-VT-40.*mV)/(5.*mV))-1.)/ms*m : 1
+dn/dt = 0.032*(mV**-1)*(15.*mV-v+VT)/
+    (exp((15.*mV-v+VT)/(5.*mV))-1.)/ms*(1.-n)-.5*exp((10.*mV-v+VT)/(40.*mV))/ms*n : 1
+dh/dt = 0.128*exp((17.*mV-v+VT)/(18.*mV))/ms*(1.-h)-4./(1+exp((40.*mV-v+VT)/(5.*mV)))/ms*h : 1
+I : amp (shared) # everything is the same except we've added this shared
+C : farad
+'''
+group = NeuronGroup(N, eqs_HH_3,
+                    threshold='v > -40*mV',
+                    refractory='v > -40*mV',
+                    method='exponential_euler')
+group.v = El
+group.C = array([0.8, 1, 1.2])*ufarad*cm**-2*area
+statemon = StateMonitor(group, 'v', record=True)
+group.run_regularly('I = rand()*50*nA', dt=10*ms)
+run(50*ms)
+
+# Plot
+figure(figsize=(12, 4))
+sns.lineplot(x = 't',
+             y = 'v',
+             hue = 'neuron',
+             data = tidy_v(statemon))
+# vlines adds multiple vertical lines in a vectorised way
+plt.vlines(array([0.01, 0.02, 0.03, 0.04]),
+           ymin = -0.065,
+           ymax = 0.04,
+           linestyles = 'dashed')
+plt.hlines(-0.065,
+           xmin = 0,
+           xmax = 0.05,
+           linestyles = 'dashed')
+;
+```
+
+Because of the different time it takes to charge the capacitator there is a phase delay.
+The system does not equlibrate in 10 ms and the "slowest" neuron sometimes fires before the "quicker" one after the input had changed.
+Try running a longer stretch.
+For longer chunks of recordings the black trace should always fire last if equilibrated, no?
+
+```{python}
+start_scope()
+group = NeuronGroup(N, eqs_HH_3,
+                    threshold='v > -40*mV',
+                    refractory='v > -40*mV',
+                    method='exponential_euler')
+group.v = El
+group.C = array([0.8, 1, 1.2])*ufarad*cm**-2*area
+statemon = StateMonitor(group, 'v', record=True)
+group.run_regularly('I = rand()*50*nA', dt=30*ms)
+run(150*ms)
+```
+
+```{python}
+# Plot
+capdata = tidy_v(statemon)
+# slice the data for the different stimulation intervals
+capdata['stim'] = pd.cut(capdata['t'],5) 
+# last add a per-sweep time axis
+# there are 4500 datapoints and 3x5 sweeps, 30ms per sweep
+# np tile allows you to stack a series on top each other
+# np arrange creates a range
+capdata['t_sweep'] = tile(np.arange(0,30,30/300),15)
+```
+
+```{python}
+figure(figsize=(24, 8))
+sns.relplot(x = 't_sweep',
+            y = 'v',
+            kind = 'line',
+            hue = 'neuron',
+            height = 2,
+            aspect = 10,
+            row = 'stim',
+            data = capdata);
+```
+
+This is not like a protocol as the stimulation starts sequentially with different delays already in place.
+Try to run again with a for loop.
+
+```{python}
+start_scope()
+agroup = NeuronGroup(N, eqs_HH_3,
+                    threshold='v > -40*mV',
+                    refractory='v > -40*mV',
+                    method='exponential_euler')
+agroup.v = El
+agroup.C = array([0.8, 1, 1.2])*ufarad*cm**-2*area
+astatemon = StateMonitor(agroup, 'v', record=True)
+
+capresult = []
+Istim = [24,50,400]*nA
+
+# Store the current state of the network
+cap = Network(agroup, astatemon)
+cap.store()
+
+for I in Istim:
+    # restore the system
+    #cap.restore()
+    # Run it with the new value of tau
+    cap.run(1000*ms)
+    runresult = tidy_v(astatemon)
+    # write the stimulation current
+    runresult['I_stim'] = [I/amp] * len(runresult['v'])
+    runresult['t_stim'] = tile(np.arange(0,
+                                         1,
+                                         1/len(runresult['v'])*3),
+                               3) # need to add n neurons here
+    capresult.append(runresult)
+
+```
+
+```{python}
+#tidy and plot
+capresult = pd.concat(capresult)
+```
+
+```{python}
+sns.relplot(x = 't_stim',
+            y = 'v',
+            kind = 'line',
+            hue = 'neuron',
+            height = 2,
+            aspect = 10,
+            row = 'I_stim',
+            data = capresult)
+```
+
+it does seem to work but the membrane is not exciteable... some parameters must be off.
+I think it has to do with assigning I in the beggining with the equations.
+
+```{python jupyter={'source_hidden': True}}
+
+```
+
 ```{python}
 
 ```
