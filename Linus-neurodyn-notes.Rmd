@@ -628,21 +628,21 @@ sns.scatterplot(x = 't_ms', y = 'neuron', data = tidy_spike(Mnew), alpha = 0.5, 
 
 ```{python}
 start_scope()
-
+del(tau)
 eqs = '''
-dv/dt = (asym-v)/tau : 1
-asym : 1
-taun : second
+dv/dt = (I-v)/tau : 1
+I : 1
+tau : second
 '''
 G = NeuronGroup(2, eqs, threshold='v>1', reset='v = 0', method='exact')
-G.asym = [2, 0]
-G.taun = [10, 100]*ms
+G.I = [2, 0]
+G.tau = [10, 100]*ms
 
 # Comment these two lines out to see what happens without Synapses
 S = Synapses(G, G, on_pre='v_post += 0.2')
 S.connect(i=0, j=1)
 
-Mstate = StateMonitor(G, 'v', record=True)
+M = StateMonitor(G, 'v', record=True)
 
 run(100*ms)
 ```
@@ -662,14 +662,14 @@ This may be a bit more complicated.
 There is a row for every Neuron.
 
 ```{python}
-np.array(Mstate.v).shape
+np.array(M.v).shape
 ```
 
 I dont know wnough about the arrays to see whether the following will fill the rows in the right way.
 Got to try.
 
 ```{python}
-np.array(Mstate.v).reshape(1000,2)
+np.array(M.v).reshape(1000,2)
 ```
 
 This should be a rectangular table that pandas could handle.
@@ -677,7 +677,7 @@ This should be a rectangular table that pandas could handle.
 ```{python}
 # If the following returns the time-series alright we are golden.
 # reshape and make a frame
-test = pd.DataFrame(np.array(Mstate.v).reshape(1000,2))
+test = pd.DataFrame(np.array(M.v).reshape(1000,2))
 test.index.name = 't_dummy'
 test.reset_index(inplace=True)
 
@@ -697,32 +697,198 @@ It does not and the data from the `np.reshape` was just spread between the two c
 ```{python}
 # Its stored per row so we should be able to make a frame without reshaping
 # reshape and make a frame
-test = pd.DataFrame(np.array(Mstate.v))
-test.index.name = 'neuron'
+test = pd.DataFrame(np.array(M.v))
+#test.index.name = 'neuron'
 test.reset_index(inplace=True)
 test
 ```
 
 ```{python}
-# make long
-test = test.melt(id_vars = 'neuron')
+# make long without t variable
+test.melt(id_vars = 'index').rename(columns={'index': 'neuron'})
+
 ```
 
 ```{python}
-sns.relplot(x = 'variable',
-            y = 'value',
+# alternatively transpose, join time axis then melt
+#start over with the wide one 
+test = pd.DataFrame(np.array(M.v))
+test = test.transpose()
+test.index.name = 't_dummy'
+test['t'] = pd.Series(np.array(M.t))
+
+# this does the job
+test = pd.melt(test,
+               value_vars = [0,1],
+               id_vars = ['t'],
+               var_name = "neuron",
+               value_name = 'v')
+```
+
+```{python}
+sns.relplot(x = 't',
+            y = 'v',
             hue = "neuron",
             col = "neuron",
             kind = "line",
             data = test);
 ```
 
+Again we want to have a tidier for this kind of thing.
+
 ```{python}
-#  Try to include the time in this
-# the time actually is in column format
-testt = pd.DataFrame(np.array(Mstate.t)())
-testt
+# you cant use .v something as a wildcard..unfortunately
+# so this function can just deal with monitors of v
+def tidy_v(ts_statemon):
+    '''
+    Function that will return a tidy timeseries dataframe
+    from a brian StateMon object.
+    '''
+    # start over with a wide frame
+    ts_frame = pd.DataFrame(ts_statemon.v)
+    
+    # the number of rows is the number of neurons
+    n_neuron = ts_statemon.v.shape[0]
+    
+    # make long with 1 Neuron as 1 column
+    ts_frame = ts_frame.transpose()
+    # add the time axis
+    ts_frame.index.name = 't_dummy'
+    ts_frame['t'] = pd.Series(np.array(ts_statemon.t))
+    # this does the job
+    return(pd.melt(ts_frame,
+                   value_vars = list(range(0, n_neuron)),
+                   id_vars = ['t'],
+                   var_name = "neuron",
+                   value_name = 'v'))
 ```
+
+```{python}
+# test the function
+sns.relplot(x = 't',
+            y = 'v',
+            hue = "neuron",
+            col = "neuron",
+            kind = "line",
+            data = tidy_v(M));
+```
+
+More Synapses, next we introduce synapses of different strength.
+
+```{python}
+start_scope()
+
+eqs = '''
+dv/dt = (I-v)/tau : 1
+I : 1
+tau : second
+'''
+G = NeuronGroup(3, eqs, threshold='v>1', reset='v = 0', method='exact')
+G.I = [2, 0, 0] # One neuron that fires, asymtote of 0 for the others means no spontaneous firing
+G.tau = [10, 100, 100]*ms
+
+# Comment these two lines out to see what happens without Synapses
+S = Synapses(G, G, 'w : 1', on_pre='v_post += w')
+S.connect(i=0, j=[1, 2])
+S.w = 'j*0.2' # 'synaptic weight'
+
+M = StateMonitor(G, 'v', record=True)
+
+run(50*ms)
+```
+
+The 3rd, new neuron makes bigger steop increases as the presynaptic neuron fires.
+
+```{python}
+sns.relplot(x = 't',
+            y = 'v',
+            hue = "neuron",
+            #col = "neuron",
+            kind = "line",
+            data = tidy_v(M));
+```
+
+Synapses also have a delay parameter that tell you how fast the signal appears from the 'soma' of the firing cell to a postsynaptic event on the next neuron.
+
+```{python}
+start_scope()
+
+eqs = '''
+dv/dt = (I-v)/tau : 1
+I : 1
+tau : second
+'''
+G = NeuronGroup(3, eqs, threshold='v>1', reset='v = 0', method='exact')
+G.I = [2, 0, 0]
+G.tau = [10, 100, 100]*ms
+
+S = Synapses(G, G, 'w : 1', on_pre='v_post += w')
+S.connect(i=0, j=[1, 2])
+S.w = 'j*0.2'
+S.delay = 'j*2*ms'
+
+M = StateMonitor(G, 'v', record=True)
+
+run(50*ms)
+```
+
+```{python}
+sns.relplot(x = 't',
+            y = 'v',
+            hue = "neuron",
+            #col = "neuron",
+            kind = "line",
+            data = tidy_v(M));
+```
+
+## Connectivity
+I will not study this one at grat length.
+Mostly I just want to do soma models with HH formulations.
+
+```{python}
+start_scope()
+
+N = 10
+G = NeuronGroup(N, 'v:1')
+S = Synapses(G, G)
+S.connect(condition='i!=j', p=0.2)
+```
+
+The formulation for the connections is assigned with the `connect` method and concerns pairs of neuon indexes `i` and `j`.
+Here theu will be connected with probability `p = 0.2` as long as `i` is not `j`. 
+
+
+This is the wrapper function to make diagrams of the $i j$ connectivity matrix.
+I will not bother to re-cook this one in a tidy way.
+
+```{python}
+def visualise_connectivity(S):
+    Ns = len(S.source)
+    Nt = len(S.target)
+    figure(figsize=(10, 4))
+    subplot(121)
+    plot(zeros(Ns), arange(Ns), 'ok', ms=10)
+    plot(ones(Nt), arange(Nt), 'ok', ms=10)
+    for i, j in zip(S.i, S.j):
+        plot([0, 1], [i, j], '-k')
+    xticks([0, 1], ['Source', 'Target'])
+    ylabel('Neuron index')
+    xlim(-0.1, 1.1)
+    ylim(-1, max(Ns, Nt))
+    subplot(122)
+    plot(S.i, S.j, 'ok')
+    xlim(-1, Ns)
+    ylim(-1, Nt)
+    xlabel('Source neuron index')
+    ylabel('Target neuron index')
+
+visualise_connectivity(S)
+```
+
+Skip the more complicated connectivity tutorials
+
+
+# Simulations
 
 ```{python}
 
