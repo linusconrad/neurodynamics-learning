@@ -1313,6 +1313,7 @@ agroup = NeuronGroup(N, eqs_HH_3,
                     refractory='v > -40*mV',
                     method='exponential_euler')
 agroup.v = El
+#agroup.I = I
 agroup.C = array([0.8, 1, 1.2])*ufarad*cm**-2*area
 astatemon = StateMonitor(agroup, 'v', record=True)
 
@@ -1327,12 +1328,13 @@ for I in Istim:
     # restore the system
     #cap.restore()
     # Run it with the new value of tau
-    cap.run(1000*ms)
+    runtim = 10
+    cap.run(1000*ms*s)
     runresult = tidy_v(astatemon)
     # write the stimulation current
     runresult['I_stim'] = [I/amp] * len(runresult['v'])
     runresult['t_stim'] = tile(np.arange(0,
-                                         1,
+                                         1000,
                                          1/len(runresult['v'])*3),
                                3) # need to add n neurons here
     capresult.append(runresult)
@@ -1356,7 +1358,7 @@ sns.relplot(x = 't_stim',
 ```
 
 it does seem to work but the membrane is not exciteable... some parameters must be off.
-I think it has to do with assigning I in the beggining with the equations.
+I think it has to do with assigning `I` in the beggining with the equations.
 
 ```{python jupyter={'source_hidden': True}}
 
