@@ -522,7 +522,7 @@ tsresult = pd.concat(tsresult)
 Now we can do voltage clamp!
 
 ```{python}
-sns.relplot(data = tsresult.query('t_stim > 99 & t_stim < 110'),
+sns.relplot(data = tsresult.query('t_stim > 90'),
             x = 't_stim',
             y = 'Im',
             hue = 'sweep',
