@@ -532,6 +532,7 @@ sns.relplot(data = tsresult.query('t_stim > 99 & t_stim < 110'),
            #facet_kws={'sharey':True, 'sharex': True})
 ```
 
+## Voltage clamp with individual Ion channels
 It would be nice to be able to see the individual currents.
 We just need to split the $I_m$ equation into its constituents.
 
@@ -649,6 +650,7 @@ sns.lineplot(data = pd.melt(Iframe,
 
 ```
 
+# Voltage clamp with Parametrised Neurons
 Now simulate a neuron group with multiple neurons.
 It will make it more difficult to get the data out.
 Try varying the sodium conductance. 
@@ -713,7 +715,7 @@ group = NeuronGroup(N, eqs_HH_Iind,
 # Start the simulation at resting potential
 group.v = -65*mV
 group.I = 0*namp # start with no stimulation
-# assign the conductances
+# assign the conductances, here we systematically vary the Na
 group.dens_na = np.linspace(0.1,200,N)*msiemens*cm**-2
 statemon = StateMonitor(group, ['I_Na', 'I_K', 'I_l'], record=True)
 
@@ -819,6 +821,101 @@ sns.relplot(data = pd.melt(gNa_varieddf,
             hue = 'variable',
             x = 't',
             y = 'value')
+
+```
+
+## Parametrised Neurons voltage clamp experiment
+Now I can try to run the 5 neurons with multiple sweeps.
+
+```{python}
+N = 5 # 5 Neurons
+group = NeuronGroup(N, eqs_HH_Iind,
+                    #threshold='v > -40*mV',
+                    #refractory='v > -40*mV',
+                    method='exponential_euler')
+
+# Start the simulation at resting potential
+group.v = -65*mV
+group.I = 0*namp # start with no stimulation
+# assign the conductances, here we systematically vary the Na conductance
+group.dens_na = np.linspace(0.1,200,N)*msiemens*cm**-2
+statemon = StateMonitor(group, ['I_Na', 'I_K', 'I_l'], record=True)
+```
+
+```{python}
+# store the initial state of the simulation
+# do not add the statemonitor, as before. It will just record the equilibration step.
+# that will then mess up the registering
+groupnet = Network(group, statemon)
+# run the simulation at RMP for a bit to equilibrate
+groupnet.run(50*ms)
+groupnet.store()
+```
+
+```{python}
+# run a loop to do multiple voltage clamp sweeps
+V_stim = linspace(-80, 50, 10)*mV
+
+tsresult = []       # container for the timeseries result
+summaryresult = []  # container for the per-neuron summaries
+# time for each sweep (ms)
+runtime = 30
+for V in V_stim:
+    # restore the neurons 
+    groupnet.restore()
+    # set the new stimulation current and run
+    group.v = V
+    # run the neuron with monitor
+    groupnet.run(runtime*ms)
+    # tidy and save the time series results
+    runresult = tidy_HHcurrents(statemon)
+    runresult['sweep'] = [V/mV] * len(runresult['I_Na'])
+    rowperneuron = int(len(runresult['I_Na'])/N) # this needs to an integer
+    # add the sweep time
+    runresult['t_stim'] = tile(np.linspace(0,runtime +50, rowperneuron), N) # need to add n neurons here
+    tsresult.append(runresult)
+```
+
+```{python}
+# check whether it worked
+pd.concat(tsresult)
+```
+
+```{python}
+# plot it all
+# filter for the relevant time points
+# melt and get the right timepoints
+gNa_varieddf = pd.concat(tsresult)
+gNa_varieddf = pd.melt(gNa_varieddf,
+                      value_vars = ['I_l', 'I_Na', 'I_K', 'I_tot'],
+                       id_vars = ['t', 'neuron', 'sweep']).query('t > 0.049 & t < 0.06')
+# plot it
+sns.relplot(data = gNa_varieddf,
+            col = 'neuron',
+            row = 'sweep',
+            kind = 'line',
+            hue = 'variable',
+            x = 't',
+            y = 'value')
+```
+
+```{python}
+# alternatively, plot all sweeps for each neuron but split by current
+# filter out the boring stuff and plot just the vgated ones
+sns.relplot(data = gNa_varieddf.query("t > 0.049 & t < 0.06 & (variable == 'I_Na' or variable == 'I_K')"),
+            col = 'neuron',
+            row = 'variable',
+            kind = 'line',
+            hue = 'sweep',
+            x = 't',
+            y = 'value')
+```
+
+```{python}
+
+```
+
+```{python}
 
 ```
 
