@@ -550,7 +550,7 @@ I : amp (shared) # This is necessary so each neuron has the same current injecti
 # Capacitance of the membrane
 C : farad
 # Voltage clamp
-v : volt
+v : volt (shared)
 
 ##### Ion channel currents
 I_l = gl*(v-El) :amp
@@ -561,7 +561,7 @@ I_K = g_kd*(n*n*n*n)*(v-EK) :amp
 # Current
 Im = I_l + I_Na + I_K: amp
 
-# Voltage equation
+# Voltage equation (for current clamp)
 #dv/dt = (Im + I)/C : volt
 
 ##### Channel kinetics
@@ -590,9 +590,7 @@ group.I = 0*namp # start with no stimulation
 group.C = np.linspace(0.2,1.5,N)*ufarad*cm**-2*area
 statemon = StateMonitor(group, ['I_Na', 'I_K', 'I_l'], record=True)
 
-# store the initial state of the simulation
-# do not add the statemonitor, as before. It will just record the equilibration step.
-# that will then mess up the registering
+# store the initial state
 groupnet = Network(group, statemon)
 
 # run the simulation at RMP for a bit to equilibrate
@@ -603,7 +601,7 @@ groupnet.store()
 # restore the neurons 
 groupnet.restore()
 # set the new stimulation current and run
-group.v = 20 *mV
+group.v = -40 *mV
 # run the neuron with monitor
 groupnet.run(30*ms)
 ```
@@ -626,7 +624,7 @@ pd.DataFrame(np.array(statemon.I_Na)).transpose()[0]
 
 ```{python}
 # now we can add those as columns to a dataframe
-pd.DataFrame({
+Iframe = pd.DataFrame({
     't': np.array(statemon.t),
     'I_Na': pd.DataFrame(np.array(statemon.I_Na)).transpose()[0],
     'I_l': pd.DataFrame(np.array(statemon.I_l)).transpose()[0],
@@ -634,15 +632,193 @@ pd.DataFrame({
 
 ```
 
+Now we can make a separate column for the total.
+
 ```{python}
+Iframe = Iframe.assign(I_tot = Iframe['I_l']+Iframe['I_Na']+Iframe['I_K'], inplace = True)
+```
+
+```{python}
+# melt and plot the thing
+sns.lineplot(data = pd.melt(Iframe,
+                            value_vars = ['I_l', 'I_Na', 'I_K', 'I_tot'],
+                            id_vars = ['t']).query('t > 0.099 & t < 0.11'),
+            hue = 'variable',
+             x = 't',
+            y = 'value')
+
+```
+
+Now simulate a neuron group with multiple neurons.
+It will make it more difficult to get the data out.
+Try varying the sodium conductance. 
+
+```{python}
+start_scope()
+# re-assign the group
+#reassign all the parameters to not get confused
+# Parameters
+area = 20000*umetre**2              # Membrane area
+Cm = 1*ufarad*cm**-2 * area         # capacitance per area
+gl = 5e-5*siemens*cm**-2 * area     # leak conductance per area
+El = -65*mV                         # leak reversal (RMP)
+EK = -90*mV                         # potassium reversal
+ENa = 50*mV                         # sodium reversal
+g_na = 100*msiemens*cm**-2 * area   # Na conductance per area
+g_kd = 30*msiemens*cm**-2 * area    # K conductance per area 
+VT = -63*mV  
+# HH equation with separate channel variable
+eqs_HH_Iind = '''
+##### Experimental parameters to set
+# Current injection
+I : amp (shared) # This is necessary so each neuron has the same current injection
+# Capacitance of the membrane
+C : farad
+# Voltage clamp
+v : volt (shared)
+# Na channel density
+dens_na: siemens*metre**-2
+
+##### Ion channel currents
+I_l = gl*(v-El) :amp
+I_Na = (dens_na*area)*(m*m*m)*h*(v-ENa) :amp
+I_K = g_kd*(n*n*n*n)*(v-EK) :amp
+
+###### I and V
+# Current
+Im = I_l + I_Na + I_K: amp
+
+# Voltage equation (for current clamp)
+#dv/dt = (Im + I)/C : volt
+
+##### Channel kinetics
+# Na activation particle
+dm/dt = 0.32*(mV**-1)*(13.*mV-v+VT)/
+    (exp((13.*mV-v+VT)/(4.*mV))-1.)/ms*(1-m)-0.28*(mV**-1)*(v-VT-40.*mV)/
+    (exp((v-VT-40.*mV)/(5.*mV))-1.)/ms*m : 1
+    
+# Na inactivation particle
+dh/dt = 0.128*exp((17.*mV-v+VT)/(18.*mV))/ms*(1.-h)-4./(1+exp((40.*mV-v+VT)/(5.*mV)))/ms*h : 1
+    
+# K activation particle
+dn/dt = 0.032*(mV**-1)*(15.*mV-v+VT)/
+    (exp((15.*mV-v+VT)/(5.*mV))-1.)/ms*(1.-n)-.5*exp((10.*mV-v+VT)/(40.*mV))/ms*n : 1
+'''
+N = 5 # 5 Neurons
+group = NeuronGroup(N, eqs_HH_Iind,
+                    #threshold='v > -40*mV',
+                    #refractory='v > -40*mV',
+                    method='exponential_euler')
+
+# Start the simulation at resting potential
+group.v = -65*mV
+group.I = 0*namp # start with no stimulation
+# assign the conductances
+group.dens_na = np.linspace(0.1,200,N)*msiemens*cm**-2
+statemon = StateMonitor(group, ['I_Na', 'I_K', 'I_l'], record=True)
 
 ```
 
 ```{python}
+# store the initial state of the simulation
+# do not add the statemonitor, as before. It will just record the equilibration step.
+# that will then mess up the registering
+groupnet = Network(group, statemon)
 
+# run the simulation at RMP for a bit to equilibrate
+groupnet.run(50*ms)
+groupnet.store()
+
+# then voltage clamp for 20 ms
+# restore the neurons 
+groupnet.restore()
+# set the new stimulation current and run
+group.v = -40 *mV
+# run the neuron with monitor
+groupnet.run(30*ms)
+```
+
+Now try to write a tidier for this kind of object.
+Once done this can then used in a loop to run multiple instances (sweeps).
+
+```{python}
+# I have no better idea then to run the ts tidier multiple times to do this
+# Number of neurons
+n_neuron = statemon.I_Na.shape[0]
+# wide format with Neuron as column
+INavariable = pd.DataFrame(statemon.I_Na).transpose()
+# add time variable then melt by neuron
+INavariable['t'] = pd.Series(np.array(statemon.t))
+INavariable = pd.melt(INavariable,
+                   value_vars = list(range(0, n_neuron)),
+                   id_vars = ['t'],
+                   var_name = "neuron",
+                   value_name = 'I_Na')
+
+# Melt the other currents into one column and add to the main data frame
+# This produces the 1 column dataframes
+Ilvariable = pd.DataFrame(statemon.I_l).transpose()
+Ilvariable = pd.melt(Ilvariable,
+        value_vars = list(range(0, n_neuron)),
+        var_name = "neuron",
+        value_name = 'I_l')
+
+IKvariable = pd.DataFrame(statemon.I_K).transpose()
+IKvariable = pd.melt(IKvariable,
+        value_vars = list(range(0, n_neuron)),
+        var_name = "neuron",
+        value_name = 'I_K')
+
+INavariable.assign(I_K = IKvariable['I_K'])
 ```
 
 ```{python}
+# Write the tidier
+def tidy_HHcurrents(monobjct):
+    # Number of neurons
+    n_neuron = monobjct.I_Na.shape[0]
+    # wide format with Neuron as column
+    resultdf = pd.DataFrame(monobjct.I_Na).transpose()
+    # add time variable then melt by neuron
+    resultdf['t'] = pd.Series(np.array(monobjct.t))
+    resultdf = pd.melt(resultdf,
+                   value_vars = list(range(0, n_neuron)),
+                   id_vars = ['t'],
+                   var_name = "neuron",
+                   value_name = 'I_Na')
+    
+    # create long dfs from the other variables
+    Il = pd.DataFrame(monobjct.I_l).transpose()
+    Il = pd.melt(Il,
+        value_vars = list(range(0, n_neuron)),
+        var_name = "neuron",
+        value_name = 'I_l')['I_l']
+    
+    IK = pd.DataFrame(monobjct.I_K).transpose()
+    IK = pd.melt(IK,
+        value_vars = list(range(0, n_neuron)),
+        var_name = "neuron",
+        value_name = 'I_K')['I_K']
+    
+    # add the columns to the object
+    resultdf = resultdf.assign(I_l = Il, I_K = IK)
+    resultdf['I_tot'] = resultdf['I_Na'] + resultdf['I_l'] + resultdf['I_K']
+    return(resultdf)
+```
+
+```{python}
+# filter for the relevant time points
+# melt long and then plot
+# melt and plot the thing
+gNa_varieddf = tidy_HHcurrents(statemon)
+sns.relplot(data = pd.melt(gNa_varieddf,
+                            value_vars = ['I_l', 'I_Na', 'I_K', 'I_tot'],
+                            id_vars = ['t', 'neuron']).query('t > 0.049 & t < 0.11'),
+            col = 'neuron',
+            kind = 'line',
+            hue = 'variable',
+            x = 't',
+            y = 'value')
 
 ```
 
