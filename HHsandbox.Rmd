@@ -532,6 +532,120 @@ sns.relplot(data = tsresult.query('t_stim > 99 & t_stim < 110'),
            #facet_kws={'sharey':True, 'sharex': True})
 ```
 
+It would be nice to be able to see the individual currents.
+We just need to split the $I_m$ equation into its constituents.
+
+```{python}
+start_scope()
+# re-assign the group
+N = 1
+# before this was -65..
+El = 0*mV
+
+# HH equation with separate channel variable
+eqs_HH_Iind = '''
+##### Experimental parameters to set
+# Current injection
+I : amp (shared) # This is necessary so each neuron has the same current injection
+# Capacitance of the membrane
+C : farad
+# Voltage clamp
+v : volt
+
+##### Ion channel currents
+I_l = gl*(v-El) :amp
+I_Na = g_na*(m*m*m)*h*(v-ENa) :amp
+I_K = g_kd*(n*n*n*n)*(v-EK) :amp
+
+###### I and V
+# Current
+Im = I_l + I_Na + I_K: amp
+
+# Voltage equation
+#dv/dt = (Im + I)/C : volt
+
+##### Channel kinetics
+# Na activation particle
+dm/dt = 0.32*(mV**-1)*(13.*mV-v+VT)/
+    (exp((13.*mV-v+VT)/(4.*mV))-1.)/ms*(1-m)-0.28*(mV**-1)*(v-VT-40.*mV)/
+    (exp((v-VT-40.*mV)/(5.*mV))-1.)/ms*m : 1
+    
+# Na inactivation particle
+dh/dt = 0.128*exp((17.*mV-v+VT)/(18.*mV))/ms*(1.-h)-4./(1+exp((40.*mV-v+VT)/(5.*mV)))/ms*h : 1
+    
+# K activation particle
+dn/dt = 0.032*(mV**-1)*(15.*mV-v+VT)/
+    (exp((15.*mV-v+VT)/(5.*mV))-1.)/ms*(1.-n)-.5*exp((10.*mV-v+VT)/(40.*mV))/ms*n : 1
+'''
+
+group = NeuronGroup(N, eqs_HH_Iind,
+                    #threshold='v > -40*mV',
+                    #refractory='v > -40*mV',
+                    method='exponential_euler')
+
+# Start the simulation at resting potential
+group.v = -65*mV
+group.I = 0*namp # start with no stimulation
+# assign the capacitances
+group.C = np.linspace(0.2,1.5,N)*ufarad*cm**-2*area
+statemon = StateMonitor(group, ['I_Na', 'I_K', 'I_l'], record=True)
+
+# store the initial state of the simulation
+# do not add the statemonitor, as before. It will just record the equilibration step.
+# that will then mess up the registering
+groupnet = Network(group, statemon)
+
+# run the simulation at RMP for a bit to equilibrate
+groupnet.run(100*ms)
+groupnet.store()
+
+# then voltage clamp for 20 ms
+# restore the neurons 
+groupnet.restore()
+# set the new stimulation current and run
+group.v = 20 *mV
+# run the neuron with monitor
+groupnet.run(30*ms)
+```
+
+Now we should have a statemonitor with the 3 currents.
+We need to tidy it.
+This is going to be more complex because there are more variables now.
+
+```{python}
+# I just wanted to access the data as array without index etc to make a new df
+# This is my ungodly solution for the content of 1 column
+# This should not be so hard and I probably found a bad way of doing this
+# In order this unreadable liner does:
+# 1: get the data as wide array
+# 2: put this data into a wide dataframe that is indexed
+# 3: transpose the dataframe to wide
+# 4: subset the column we want without index
+pd.DataFrame(np.array(statemon.I_Na)).transpose()[0]
+```
+
+```{python}
+# now we can add those as columns to a dataframe
+pd.DataFrame({
+    't': np.array(statemon.t),
+    'I_Na': pd.DataFrame(np.array(statemon.I_Na)).transpose()[0],
+    'I_l': pd.DataFrame(np.array(statemon.I_l)).transpose()[0],
+    'I_K': pd.DataFrame(np.array(statemon.I_K)).transpose()[0]})
+
+```
+
+```{python}
+
+```
+
+```{python}
+
+```
+
+```{python}
+
+```
+
 ```{python}
 
 ```
