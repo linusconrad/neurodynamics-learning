@@ -1239,6 +1239,7 @@ sns.relplot(data = resultsts.query('neuron == 4 and pulse_amp == 10'),
            row = 'pulse_freq',
            hue = 'neuron')
 
-# %%
+# %% [markdown]
+# We have now established the basics, I will move the actual modelling to another directory and private github for obvious reasons.
 
 # %%
